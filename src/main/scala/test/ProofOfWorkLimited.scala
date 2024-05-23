@@ -12,7 +12,10 @@ object ProofOfWork {
     val block = "new block"
     val target = BigInt("1FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF", 16)
     val promise = Promise[Long]
-    proveWork(block, target, promise)
+    val numFutures = 7000
+    for (i <- 1 until numFutures) {
+      proveWork(block, target, promise, i, numFutures)
+    }
     val nonce = Await.result(promise.future, Duration.Inf)
 
 
@@ -21,21 +24,20 @@ object ProofOfWork {
     println("Time: " + (endTime - startTime)/1e6d + " milliseconds")
   }
 
-  private def proveWork(block: String, target: BigInt, promise: Promise[Long]): Unit = {
-    var nonce = 0L
+  private def proveWork(block: String, target: BigInt, promise: Promise[Long], startNonce: Long, numFutures: Long): Unit = {
     while (!promise.isCompleted) {
-      val result = Future(checkHash(block, nonce, target))
+      val result = Future(checkHash(block, startNonce, target, numFutures, promise))
       result.onComplete{
         case Success((true, usedNonce)) => {
           promise.trySuccess(usedNonce)
         }
-        case Success((false, usedNonce)) => nonce += 1
+        case Success((false, usedNonce)) => 
         case Failure(_) => 
       }
     }
   }
 
-  private def checkHash(block: String, nonce: Long, target: BigInt): (Boolean, Long) = {
+  private def checkHash(block: String, nonce: Long, target: BigInt, numFutures: Long, promise: Promise[Long]): (Boolean, Long) = {
     val digest = MessageDigest.getInstance("SHA-256")
     val input = block + nonce
     val encodedhash = digest.digest(input.getBytes(StandardCharsets.UTF_8))
@@ -43,6 +45,8 @@ object ProofOfWork {
     val hashValue = BigInt(1, encodedhash2)
     if (hashValue.compareTo(target) < 0){
       (true, nonce)
+    } else if (!(hashValue.compareTo(target) < 0) && !promise.isCompleted){
+      checkHash(block, nonce + numFutures, target, numFutures, promise)
     } else {
       (false, nonce)
     }
